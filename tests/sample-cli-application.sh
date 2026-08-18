@@ -8,7 +8,7 @@ prog=$(basename "$0")
 
 usage() {
     cat <<USAGE
-Greets a user by name.
+Greets a user by first and last name.
 
 Usage: $prog [FIRST_NAME] [LAST_NAME]
 

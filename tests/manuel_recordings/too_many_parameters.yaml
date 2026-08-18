@@ -1,7 +1,7 @@
 # Manuel recording file
 
-# (manuel) tests/sample-cli-application.sh Ada Lovelace Huhhh
-# Greets a user by name.
+# (manuel) tests/sample-cli-application.sh Ada Lovelace Huhhhh
+# Greets a user by first and last name.
 # 
 # Usage: sample-cli-application.sh [FIRST_NAME] [LAST_NAME]
 # 
@@ -12,12 +12,12 @@
 # Options:
 #   -h, --help     Print help
 #   -V, --version  Print version
-# error: unexpected argument 'Huhhh' found
+# error: unexpected argument 'Huhhhh' found
 # (manuel) echo $?
 # 1
 # (manuel) 
 
-terminal_width: 100
+terminal_width: 126
 recording_items:
 - !Output "\e[?2004h\e[1m\e[34m(manuel)\e[0m "
 - !Input
@@ -171,8 +171,11 @@ recording_items:
   - 104
 - !Output h
 - !Input
+  - 104
+- !Output h
+- !Input
   - 13
-- !Output "\r\n\e[?2004l\rGreets a user by name.\r\n\r\nUsage: sample-cli-application.sh [FIRST_NAME] [LAST_NAME]\r\n\r\nArguments:\r\n  [FIRST_NAME]  The user's first name\r\n  [LAST_NAME]   The user's last name\r\n\r\nOptions:\r\n  -h, --help     Print help\r\n  -V, --version  Print version\r\nerror: unexpected argument 'Huhhh' found\r\n\e[?2004h\e[1m\e[34m(manuel)\e[0m "
+- !Output "\r\n\e[?2004l\rGreets a user by first and last name.\r\n\r\nUsage: sample-cli-application.sh [FIRST_NAME] [LAST_NAME]\r\n\r\nArguments:\r\n  [FIRST_NAME]  The user's first name\r\n  [LAST_NAME]   The user's last name\r\n\r\nOptions:\r\n  -h, --help     Print help\r\n  -V, --version  Print version\r\nerror: unexpected argument 'Huhhhh' found\r\n\e[?2004h\e[1m\e[34m(manuel)\e[0m "
 - !Input
   - 101
 - !Output e
