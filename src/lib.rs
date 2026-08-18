@@ -93,6 +93,7 @@ mod pty {
         pty_in_tx: std::sync::mpsc::Sender<Vec<u8>>,
         pty_out_rx: std::sync::mpsc::Receiver<String>,
         pty_output: String,
+        pty_is_alive: bool,
     }
 
     impl Pty {
@@ -130,7 +131,7 @@ mod pty {
                     match pty_reader.read(&mut buffer) {
                         Ok(n) => {
                             if n > 0 {
-                                log::info!("Read {} bytes from PTY", n);
+                                log::info!("Read {} bytes from PTY", n); // todo: remove later
                                 match pty_out_tx
                                     .send(String::from_utf8_lossy(&buffer[..n]).into_owned())
                                 {
@@ -139,6 +140,9 @@ mod pty {
                                         log::error!("Error sending PTY output: {:?}", e);
                                     }
                                 }
+                            } else {
+                                log::info!("PTY closed");
+                                break;
                             }
                         }
                         Err(e) => {
@@ -152,17 +156,25 @@ mod pty {
                 pty_in_tx,
                 pty_out_rx,
                 pty_output: String::new(),
+                pty_is_alive: true,
             }
         }
 
         /// Reads new output from the PTY and appends it to the internal buffer
         pub(crate) fn get_new_output(&mut self) -> Option<String> {
             let mut new_output = None::<String>;
-            while let Ok(content) = self.pty_out_rx.try_recv() {
-                match new_output {
-                    Some(ref mut new_output) => new_output.push_str(&content),
-                    None => new_output = Some(content.clone()),
-                };
+            loop {
+                match self.pty_out_rx.try_recv() {
+                    Ok(content) => match new_output {
+                        Some(ref mut new_output) => new_output.push_str(&content),
+                        None => new_output = Some(content.clone()),
+                    },
+                    Err(std::sync::mpsc::TryRecvError::Empty) => break,
+                    Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                        self.pty_is_alive = false;
+                        break;
+                    }
+                }
             }
             if let Some(ref new_output) = new_output {
                 self.pty_output.push_str(new_output);
@@ -178,6 +190,10 @@ mod pty {
         pub(crate) fn send_input(&self, input: Vec<u8>) -> Result<()> {
             self.pty_in_tx.send(input)?;
             Ok(())
+        }
+
+        pub(crate) fn is_alive(&self) -> bool {
+            self.pty_is_alive
         }
     }
 }
@@ -285,8 +301,12 @@ pub fn record_using_tui() -> Result<Option<Recording>> {
 }
 
 pub enum ReplayResult {
+    /// The replayed output matches the recorded output.
     Match,
+    /// The replayed output does not match the recorded output.
     Mismatch(String),
+    /// An error occurred during the replay process.
+    RecordingError(String),
 }
 
 pub const REPLAY_TIMEOUT: Duration = Duration::from_secs(5); // todo: make higher, configurable, and/or auto-detectable based on recording timestamps
@@ -302,39 +322,69 @@ pub fn replay_recording(recording: Recording) -> Result<ReplayResult> {
     let mut current_item = recording_items.remove(0);
     let mut last_output_time = std::time::Instant::now();
     loop {
+        // append new output
+        if let Some(new_output) = pty.get_new_output() {
+            unmatched_output.push_str(&new_output);
+            last_output_time = std::time::Instant::now();
+        }
+
         match current_item {
             RecordingItem::Input(_) => {
-                return Ok(ReplayResult::Mismatch(
-                    "Replay has output where recording expected input".to_string(),
+                return Ok(ReplayResult::RecordingError(
+                    "Recordings must never start with input".to_string(),
                 ));
             }
             RecordingItem::Output(ref expected_output) => {
-                if unmatched_output.starts_with(expected_output) {
-                    unmatched_output = unmatched_output[expected_output.len()..].to_string();
-                    if recording_items.is_empty() {
-                        return Ok(ReplayResult::Match);
-                    } else {
-                        current_item = recording_items.remove(0);
+                match unmatched_output.len().cmp(&expected_output.len()) {
+                    std::cmp::Ordering::Less => {
+                        // still waiting for more output, so check if it matches so far
+                        if !expected_output.starts_with(&unmatched_output) {
+                            return Ok(ReplayResult::Mismatch(format!(
+                                "Replay output does not match recording. Unmatched output: {}",
+                                unmatched_output
+                            )));
+                        }
+                        // and check for timeout
+                        if last_output_time.elapsed() > REPLAY_TIMEOUT {
+                            return Ok(ReplayResult::Mismatch(format!(
+                                "Replay timed out after {:?} with unmatched output: {}",
+                                REPLAY_TIMEOUT, unmatched_output
+                            )));
+                        }
                     }
-                    while let RecordingItem::Input(input) = current_item {
-                        pty.send_input(input)?;
+                    std::cmp::Ordering::Equal => {
+                        // compare output and execute all next recorded input items
+                        unmatched_output.clear();
                         if recording_items.is_empty() {
                             return Ok(ReplayResult::Match);
                         } else {
                             current_item = recording_items.remove(0);
                         }
+                        while let RecordingItem::Input(input) = current_item {
+                            pty.send_input(input)?;
+                            if recording_items.is_empty() {
+                                return Ok(ReplayResult::Match);
+                            } else {
+                                current_item = recording_items.remove(0);
+                            }
+                        }
+                    }
+                    std::cmp::Ordering::Greater => {
+                        // err at extra unexpected output
+                        return Ok(ReplayResult::Mismatch(format!(
+                            "Replay has more output than recording expected. Unmatched output: {}",
+                            unmatched_output
+                        )));
                     }
                 }
             }
         }
-        if let Some(new_output) = pty.get_new_output() {
-            unmatched_output.push_str(&new_output);
-            last_output_time = std::time::Instant::now();
-        }
-        if last_output_time.elapsed() > REPLAY_TIMEOUT {
+
+        // mismatch if the process exits unexpectedly
+        if !pty.is_alive() {
             return Ok(ReplayResult::Mismatch(format!(
-                "Replay timed out after {:?} with unmatched output: {}",
-                REPLAY_TIMEOUT, unmatched_output
+                "Replay has unmatched output: {}",
+                unmatched_output
             )));
         }
     }

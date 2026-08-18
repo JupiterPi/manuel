@@ -49,6 +49,9 @@ fn main() -> Result<()> {
                 ReplayResult::Mismatch(reason) => {
                     println!("❌ Replay did not match recording: {}", reason);
                 }
+                ReplayResult::RecordingError(reason) => {
+                    println!("❌ Error during replay: {}", reason);
+                }
             }
         }
     }
