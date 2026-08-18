@@ -1,0 +1,143 @@
+# Manuel recording file
+
+# (manuel) tests/sample-cli-application.sh Ada
+# Last name: Lovelace
+# Hello, Ada Lovelace!
+# (manuel) 
+
+terminal_width: 100
+recording_items:
+- !Output "\e[?2004h\e[1m\e[34m(manuel)\e[0m "
+- !Input
+  - 116
+- !Output t
+- !Input
+  - 101
+- !Output e
+- !Input
+  - 115
+- !Output s
+- !Input
+  - 116
+- !Output t
+- !Input
+  - 115
+- !Output s
+- !Input
+  - 47
+- !Output /
+- !Input
+  - 115
+- !Output s
+- !Input
+  - 97
+- !Output a
+- !Input
+  - 109
+- !Output m
+- !Input
+  - 112
+- !Output p
+- !Input
+  - 108
+- !Output l
+- !Input
+  - 101
+- !Output e
+- !Input
+  - 45
+- !Output '-'
+- !Input
+  - 99
+- !Output c
+- !Input
+  - 108
+- !Input
+  - 105
+- !Output li
+- !Input
+  - 45
+- !Output '-'
+- !Input
+  - 97
+- !Output a
+- !Input
+  - 112
+- !Output p
+- !Input
+  - 112
+- !Output p
+- !Input
+  - 108
+- !Output l
+- !Input
+  - 105
+- !Output i
+- !Input
+  - 99
+- !Output c
+- !Input
+  - 97
+- !Output a
+- !Input
+  - 116
+- !Input
+  - 105
+- !Output ti
+- !Input
+  - 111
+- !Output o
+- !Input
+  - 110
+- !Output n
+- !Input
+  - 46
+- !Output .
+- !Input
+  - 115
+- !Output s
+- !Input
+  - 104
+- !Output h
+- !Input
+  - 32
+- !Output ' '
+- !Input
+  - 65
+- !Output A
+- !Input
+  - 100
+- !Output d
+- !Input
+  - 97
+- !Output a
+- !Input
+  - 13
+- !Output "\r\n\e[?2004l\rLast name: "
+- !Input
+  - 76
+- !Output L
+- !Input
+  - 111
+- !Output o
+- !Input
+  - 118
+- !Output v
+- !Input
+  - 101
+- !Output e
+- !Input
+  - 108
+- !Output l
+- !Input
+  - 97
+- !Output a
+- !Input
+  - 99
+- !Output c
+- !Input
+  - 101
+- !Output e
+- !Input
+  - 13
+- !Output "\r\nHello, Ada Lovelace!\r\n\e[?2004h\e[1m\e[34m(manuel)\e[0m "

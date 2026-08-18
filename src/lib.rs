@@ -50,7 +50,7 @@ impl Recording {
 }
 
 impl Recording {
-    pub fn read_from_file(path: &str) -> Result<Self> {
+    pub fn read_from_file<P: AsRef<std::path::Path>>(path: P) -> Result<Self> {
         let file = std::fs::File::open(path)?;
         let reader = std::io::BufReader::new(file);
         let recording = serde_yaml::from_reader(reader)?;
@@ -112,6 +112,7 @@ mod pty {
                 let mut cmd = portable_pty::CommandBuilder::new("bash");
                 cmd.args(["--noprofile", "--norc"]);
                 cmd.env("PS1", "\u{1b}[1m\u{1b}[34m(manuel)\u{1b}[0m "); // in blue, bold, with reset afterwards
+                cmd.cwd(std::env::var("CARGO_MANIFEST_DIR").unwrap_or_else(|_| ".".to_string())); // todo
                 let _child = pty.slave.spawn_command(cmd).unwrap();
                 let mut pty_reader = pty.master.try_clone_reader().unwrap();
                 let mut pty_writer = pty.master.take_writer().unwrap();
