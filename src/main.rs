@@ -1,6 +1,10 @@
 use anyhow::{Context as _, Result};
 use clap::Parser;
-use manuel::{Recording, ReplayResult, record_using_tui, replay_recording};
+use manuel::{
+    Recording, ReplayResult,
+    explorer::{Collection, explore_collection_in_tui},
+    record_using_tui, replay_recording,
+};
 
 #[derive(clap::Parser)]
 #[command(version, long_about = None)]
@@ -19,6 +23,11 @@ enum CliCommands {
     Record { file: String },
     /// Replay a saved terminal session and assert that the output matches the record
     Replay { file: String },
+    /// Opens a TUI to explore recordings inside a tests directory, create new collections and create recordings
+    Explore {
+        #[arg(default_value = "tests/manuel_recordings")]
+        root_dir: String,
+    },
 }
 
 fn main() -> Result<()> {
@@ -33,7 +42,7 @@ fn main() -> Result<()> {
     }
     match &cli_args.command {
         CliCommands::Record { file } => {
-            let recording = record_using_tui();
+            let recording = ratatui::run(record_using_tui);
             if let Ok(Some(recording)) = recording
                 && let Err(e) = recording.write_to_file(file)
             {
@@ -53,6 +62,13 @@ fn main() -> Result<()> {
                     println!("❌ Error during replay: {}", reason);
                 }
             }
+        }
+        CliCommands::Explore { root_dir } => {
+            let collection = Collection::read_from_dir(root_dir)
+                .context("Failed to read Manuel recordings directory")?;
+            ratatui::run(|terminal| {
+                explore_collection_in_tui(terminal, &collection, std::path::Path::new(root_dir))
+            })?;
         }
     }
 

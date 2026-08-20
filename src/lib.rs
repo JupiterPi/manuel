@@ -5,6 +5,8 @@
 //!
 //! See main.rs for a example CLI that wraps Manuel.
 
+pub mod explorer;
+
 use std::io::Write;
 use std::time::Duration;
 
@@ -20,13 +22,13 @@ use ratatui::{
 use serde::{Deserialize, Serialize};
 
 /// Contains all information necessary to replay a terminal session that was previously recorded.
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct Recording {
     terminal_width: u16,
     recording_items: Vec<RecordingItem>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub enum RecordingItem {
     Output(String),
     Input(Vec<u8>),
@@ -57,7 +59,18 @@ impl Recording {
         Ok(recording)
     }
 
-    pub fn write_to_file(&self, path: &str) -> Result<()> {
+    pub(crate) fn concatenate_output(&self) -> String {
+        self.recording_items
+            .iter()
+            .filter_map(|item| match item {
+                RecordingItem::Output(output) => Some(output.clone()),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .join("")
+    }
+
+    pub fn write_to_file(&self, path: impl AsRef<std::path::Path>) -> Result<()> {
         let file = std::fs::File::create(path)?;
         let mut writer = std::io::BufWriter::new(file);
         writeln!(writer, "# Manuel recording file")?;
@@ -65,20 +78,11 @@ impl Recording {
         writeln!(
             writer,
             "{}",
-            strip_ansi_escapes::strip_str(
-                self.recording_items
-                    .iter()
-                    .filter_map(|item| match item {
-                        RecordingItem::Output(output) => Some(output.clone()),
-                        _ => None,
-                    })
-                    .collect::<Vec<_>>()
-                    .join("")
-            )
-            .split("\n")
-            .map(|line| format!("# {}", line))
-            .collect::<Vec<_>>()
-            .join("\n")
+            strip_ansi_escapes::strip_str(self.concatenate_output())
+                .split("\n")
+                .map(|line| format!("# {}", line))
+                .collect::<Vec<_>>()
+                .join("\n")
         )?;
         writeln!(writer)?;
         serde_yaml::to_writer(writer, self)?;
@@ -200,104 +204,102 @@ mod pty {
 
 /// Opens a TUI to record a terminal session.
 /// Returns the recording if the user pressed Ctrl+S, or None if the user pressed Ctrl+C.
-pub fn record_using_tui() -> Result<Option<Recording>> {
-    ratatui::run(|terminal| {
-        let terminal_width = terminal
-            .size()
-            .context("Failed to get terminal size")?
-            .width;
-        let mut recording = Recording::new(terminal_width);
-        let mut pty = pty::Pty::new_in_thread(terminal_width);
-        loop {
-            if let Some(new_output) = pty.get_new_output() {
-                recording.append_output(new_output);
+pub fn record_using_tui(terminal: &mut ratatui::DefaultTerminal) -> Result<Option<Recording>> {
+    let terminal_width = terminal
+        .size()
+        .context("Failed to get terminal size")?
+        .width;
+    let mut recording = Recording::new(terminal_width);
+    let mut pty = pty::Pty::new_in_thread(terminal_width);
+    loop {
+        if let Some(new_output) = pty.get_new_output() {
+            recording.append_output(new_output);
+        }
+
+        terminal.draw(|frame| {
+            let [layout_title, layout_pty, layout_input] = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints(vec![
+                    Constraint::Length(1),
+                    Constraint::Fill(1),
+                    Constraint::Length(3),
+                ])
+                .areas(frame.area());
+
+            // title
+            let layout = layout_title;
+            {
+                let title = Paragraph::new(Line::from(vec![
+                    "Manuel".bold().green(),
+                    " - Capture Snapshot \"Name\"".green(),
+                ]))
+                .centered();
+                frame.render_widget(title, layout);
             }
 
-            terminal.draw(|frame| {
-                let [layout_title, layout_pty, layout_input] = Layout::default()
-                    .direction(Direction::Vertical)
-                    .constraints(vec![
-                        Constraint::Length(1),
-                        Constraint::Fill(1),
-                        Constraint::Length(3),
-                    ])
-                    .areas(frame.area());
-
-                // title
-                let layout = layout_title;
-                {
-                    let title = Paragraph::new(Line::from(vec![
-                        "Manuel".bold().green(),
-                        " - Capture Snapshot \"Name\"".green(),
-                    ]))
-                    .centered();
-                    frame.render_widget(title, layout);
-                }
-
-                // pty
-                let layout = layout_pty;
-                {
-                    let pty_output = match pty.get_total_output().into_text() {
-                        Ok(text) => text,
-                        Err(e) => {
-                            log::error!("Error converting PTY output to text: {:?}", e);
-                            Text::from("Error converting PTY output to text")
-                        }
-                    };
-                    let mut scroll_view = tui_scrollview::ScrollView::new(Size::new(
-                        layout.width - 1,
-                        pty_output.height() as u16,
-                    ));
-                    scroll_view.render_widget(Paragraph::new(pty_output), scroll_view.area());
-                    frame.render_stateful_widget(scroll_view, layout, &mut {
-                        let mut scroll_view_state = tui_scrollview::ScrollViewState::default();
-                        scroll_view_state.scroll_to_bottom();
-                        scroll_view_state
-                    });
-                }
-
-                // input
-                let layout = layout_input;
-                {
-                    let input_block = Block::default().borders(Borders::ALL);
-                    let input_status = Paragraph::new(Line::from(vec![
-                        "Type into TTY".green(),
-                        " · ".bold(),
-                        "Scroll up/down".green(),
-                        " · ".bold(),
-                        "Ctrl+C to exit".green(),
-                        " · ".bold(),
-                        "Ctrl+S to save".green(),
-                    ]))
-                    .centered()
-                    .block(input_block);
-                    frame.render_widget(input_status, layout);
-                }
-            })?;
-            if crossterm::event::poll(Duration::from_millis(10))? {
-                let crossterm_event = crossterm::event::read()?;
-                if let crossterm::event::Event::Key(key_event) = crossterm_event
-                    && key_event
-                        .modifiers
-                        .contains(crossterm::event::KeyModifiers::CONTROL)
-                {
-                    if key_event.code == crossterm::event::KeyCode::Char('c') {
-                        break Ok(None);
-                    } else if key_event.code == crossterm::event::KeyCode::Char('s') {
-                        return Ok(Some(recording));
+            // pty
+            let layout = layout_pty;
+            {
+                let pty_output = match pty.get_total_output().into_text() {
+                    Ok(text) => text,
+                    Err(e) => {
+                        log::error!("Error converting PTY output to text: {:?}", e);
+                        Text::from("Error converting PTY output to text")
                     }
+                };
+                let mut scroll_view = tui_scrollview::ScrollView::new(Size::new(
+                    layout.width - 1,
+                    pty_output.height() as u16,
+                ));
+                scroll_view.render_widget(Paragraph::new(pty_output), scroll_view.area());
+                frame.render_stateful_widget(scroll_view, layout, &mut {
+                    let mut scroll_view_state = tui_scrollview::ScrollViewState::default();
+                    scroll_view_state.scroll_to_bottom();
+                    scroll_view_state
+                });
+            }
+
+            // input
+            let layout = layout_input;
+            {
+                let input_block = Block::default().borders(Borders::ALL);
+                let input_status = Paragraph::new(Line::from(vec![
+                    "Type into TTY".green(),
+                    " · ".bold(),
+                    "Scroll up/down".green(),
+                    " · ".bold(),
+                    "Ctrl+C to exit".green(),
+                    " · ".bold(),
+                    "Ctrl+S to save".green(),
+                ]))
+                .centered()
+                .block(input_block);
+                frame.render_widget(input_status, layout);
+            }
+        })?;
+        if crossterm::event::poll(Duration::from_millis(10))? {
+            let crossterm_event = crossterm::event::read()?;
+            if let crossterm::event::Event::Key(key_event) = crossterm_event
+                && key_event
+                    .modifiers
+                    .contains(crossterm::event::KeyModifiers::CONTROL)
+            {
+                if key_event.code == crossterm::event::KeyCode::Char('c') {
+                    break Ok(None);
+                } else if key_event.code == crossterm::event::KeyCode::Char('s') {
+                    return Ok(Some(recording));
                 }
-                let terminput_event = terminput_crossterm::to_terminput(crossterm_event)?;
-                let mut buf = [0; 16];
-                if let Ok(written) = terminput_event.encode(&mut buf, terminput::Encoding::Xterm) {
-                    recording
-                        .recording_items
-                        .push(RecordingItem::Input(buf[..written].to_vec()));
-                    pty.send_input(buf[..written].to_vec())?;
-                }
+            }
+            let terminput_event = terminput_crossterm::to_terminput(crossterm_event)?;
+            let mut buf = [0; 16];
+            if let Ok(written) = terminput_event.encode(&mut buf, terminput::Encoding::Xterm) {
+                recording
+                    .recording_items
+                    .push(RecordingItem::Input(buf[..written].to_vec()));
+                pty.send_input(buf[..written].to_vec())?;
             }
         }
-    })
+    }
 }
 
 pub enum ReplayResult {
