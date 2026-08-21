@@ -1,6 +1,6 @@
 # Manuel recording file
 
-# (manuel) tests/sample-cli-application.sh Ada Lovelace Huhhhh
+# (manuel) greeter Ada Lovelace Huuhhhh
 # Greets a user by first and last name.
 # 
 # Usage: sample-cli-application.sh [FIRST_NAME] [LAST_NAME]
@@ -12,125 +12,52 @@
 # Options:
 #   -h, --help     Print help
 #   -V, --version  Print version
-# error: unexpected argument 'Huhhhh' found
+# error: unexpected argument 'Huuhhhh' found
 # (manuel) echo $?
 # 1
 # (manuel) 
 
-terminal_width: 126
+terminal_width: 102
 recording_items:
 - !Output "\e[?2004h\e[1m\e[34m(manuel)\e[0m "
 - !Input
+  - 103
+- !Output g
+- !Input
+  - 114
+- !Output r
+- !Input
+  - 101
+- !Output e
+- !Input
+  - 101
+- !Output e
+- !Input
   - 116
 - !Output t
 - !Input
   - 101
 - !Output e
 - !Input
-  - 115
-- !Output s
-- !Input
-  - 116
-- !Output t
-- !Input
-  - 115
-- !Output s
-- !Input
-  - 47
-- !Output /
-- !Input
-  - 115
-- !Output s
-- !Input
-  - 97
-- !Output a
-- !Input
-  - 109
-- !Output m
-- !Input
-  - 112
-- !Output p
-- !Input
-  - 108
-- !Output l
-- !Input
-  - 101
-- !Output e
-- !Input
-  - 45
-- !Output '-'
-- !Input
-  - 99
-- !Output c
-- !Input
-  - 108
-- !Output l
-- !Input
-  - 105
-- !Output i
-- !Input
-  - 45
-- !Output '-'
-- !Input
-  - 97
-- !Output a
-- !Input
-  - 112
-- !Output p
-- !Input
-  - 112
-- !Output p
-- !Input
-  - 108
-- !Output l
-- !Input
-  - 105
-- !Output i
-- !Input
-  - 99
-- !Output c
-- !Input
-  - 97
-- !Output a
-- !Input
-  - 116
-- !Output t
-- !Input
-  - 105
-- !Output i
-- !Input
-  - 111
-- !Output o
-- !Input
-  - 110
-- !Output n
-- !Input
-  - 46
-- !Output .
-- !Input
-  - 115
-- !Output s
-- !Input
-  - 104
-- !Output h
+  - 114
 - !Input
   - 32
-- !Output ' '
+- !Output r
 - !Input
   - 65
-- !Output A
-- !Input
-  - 100
-- !Output d
-- !Input
-  - 97
-- !Output a
-- !Input
-  - 32
 - !Output ' '
 - !Input
+  - 100
+- !Output A
+- !Input
+  - 97
+- !Output d
+- !Input
+  - 32
+- !Output a
+- !Input
   - 76
-- !Output L
+- !Output ' L'
 - !Input
   - 111
 - !Output o
@@ -162,6 +89,9 @@ recording_items:
   - 117
 - !Output u
 - !Input
+  - 117
+- !Output u
+- !Input
   - 104
 - !Output h
 - !Input
@@ -175,7 +105,7 @@ recording_items:
 - !Output h
 - !Input
   - 13
-- !Output "\r\n\e[?2004l\rGreets a user by first and last name.\r\n\r\nUsage: sample-cli-application.sh [FIRST_NAME] [LAST_NAME]\r\n\r\nArguments:\r\n  [FIRST_NAME]  The user's first name\r\n  [LAST_NAME]   The user's last name\r\n\r\nOptions:\r\n  -h, --help     Print help\r\n  -V, --version  Print version\r\nerror: unexpected argument 'Huhhhh' found\r\n\e[?2004h\e[1m\e[34m(manuel)\e[0m "
+- !Output "\r\n\e[?2004l\rGreets a user by first and last name.\r\n\r\nUsage: sample-cli-application.sh [FIRST_NAME] [LAST_NAME]\r\n\r\nArguments:\r\n  [FIRST_NAME]  The user's first name\r\n  [LAST_NAME]   The user's last name\r\n\r\nOptions:\r\n  -h, --help     Print help\r\n  -V, --version  Print version\r\nerror: unexpected argument 'Huuhhhh' found\r\n\e[?2004h\e[1m\e[34m(manuel)\e[0m "
 - !Input
   - 101
 - !Output e

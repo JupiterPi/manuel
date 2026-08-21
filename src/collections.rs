@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use crate::{Recording, ReplayResult, record_using_tui, replay_recording};
 use anyhow::{Context as _, Result};
 use ratatui::DefaultTerminal;
 use ratatui::crossterm::event::{self, KeyCode};
@@ -10,18 +9,26 @@ use ratatui::style::{Color, Modifier, Stylize};
 use ratatui::text::Line;
 use ratatui::widgets::{Block, Borders, List, ListState, Paragraph};
 
-#[derive(Clone)]
+use crate::recordings::{Recording, ReplayContext, record_using_tui};
+
+#[derive(Clone, Default)]
 pub struct Collection {
     pub collections: HashMap<String, Collection>,
     pub recordings: HashMap<String, Recording>,
+    pub replay_context: ReplayContext,
 }
 
 impl Collection {
     pub fn read_from_dir<P: AsRef<std::path::Path>>(dir: P) -> Result<Collection> {
+        let dir: &Path = dir.as_ref();
+        Self::read_from_dir_(dir, &ReplayContext::default())
+    }
+    fn read_from_dir_(dir: &Path, replay_context: &ReplayContext) -> Result<Collection> {
         let entries =
-            std::fs::read_dir(&dir).context("Failed to read Manuel recordings directory")?;
+            std::fs::read_dir(dir).context("Failed to read Manuel recordings directory")?;
         let mut collections = HashMap::new();
         let mut recordings = HashMap::new();
+        let mut replay_context = replay_context.clone();
         for entry in entries {
             let entry = entry.context("Failed to read entry in Manuel recordings directory")?;
             let path = entry.path();
@@ -30,25 +37,36 @@ impl Collection {
                 .map(|str| str.to_string_lossy().to_string())
                 .unwrap_or("<unnamed>".to_string());
             if path.is_dir() {
-                let collection =
-                    Collection::read_from_dir(&path).context("Failed to read Manuel collection")?;
+                let collection = Collection::read_from_dir_(&path, &replay_context)
+                    .context("Failed to read Manuel collection")?;
                 collections.insert(name, collection);
             } else if path.extension().is_some_and(|ext| ext == "yaml") {
                 let recording =
                     Recording::read_from_file(&path).context("Failed to read Manuel recording")?;
                 recordings.insert(name, recording);
+            } else if path.file_name().is_some_and(|name| name == ".bashrc") {
+                replay_context.bashrc_files.push(path);
+            } else {
+                log::warn!(
+                    "Ignoring unknown file in Manuel recordings directory: {}",
+                    path.display()
+                );
             }
         }
         Ok(Collection {
             collections,
             recordings,
+            replay_context,
         })
     }
 
-    fn flat_recordings(&self) -> HashMap<String, &Recording> {
+    pub(crate) fn flat_recordings(&self) -> HashMap<String, (Recording, ReplayContext)> {
         let mut recordings = HashMap::new();
         for (name, recording) in &self.recordings {
-            recordings.insert(name.clone(), recording);
+            recordings.insert(
+                name.clone(),
+                (recording.clone(), self.replay_context.clone()),
+            );
         }
         for (name, collection) in &self.collections {
             let sub_recordings = collection.flat_recordings();
@@ -57,47 +75,6 @@ impl Collection {
             }
         }
         recordings
-    }
-}
-
-/// Runs [`replay_recording`] on all Manuel recordings recursively in the given directory.
-/// **Panics** if any of the recordings mismatch. Use this in your tests.
-pub fn run_manuel_tests_in_dir(dir: impl AsRef<std::path::Path>) {
-    // discover all recordings
-    let root_collection =
-        Collection::read_from_dir(dir).expect("Failed to read Manuel recordings directory");
-    let recordings = root_collection.flat_recordings();
-
-    // replay all recordings
-    let mut fail = false;
-    for (name, recording) in recordings {
-        match replay_recording(recording.clone())
-            .unwrap_or_else(|_| panic!("Failed to replay Manuel recording: {:?}", name))
-        {
-            ReplayResult::Match => {
-                println!(
-                    "\u{1b}[32m\u{1b}[1m[OK]\u{1b}[0m Successfully replayed Manuel recording: {:?}",
-                    name
-                );
-            }
-            ReplayResult::Mismatch(reason) => {
-                fail = true;
-                println!(
-                    "\u{1b}[31m\u{1b}[1m[FAIL]\u{1b}[0m Replay did not match recording: {:?}, reason: {}",
-                    name, reason
-                );
-            }
-            ReplayResult::RecordingError(reason) => {
-                fail = true;
-                println!(
-                    "\u{1b}[31m\u{1b}[1m[FAIL]\u{1b}[0m Error during replay: {:?}, reason: {}",
-                    name, reason
-                );
-            }
-        }
-    }
-    if fail {
-        panic!("Some Manuel recordings failed to replay. See output for details.");
     }
 }
 
@@ -121,7 +98,7 @@ pub fn explore_collection_in_tui(
             frame.render_widget(explorer_block, frame.area());
 
             let [layout_list, layout_help] =
-                Layout::vertical([Constraint::Fill(1), Constraint::Length(5)]).areas(inner_area);
+                Layout::vertical([Constraint::Fill(1), Constraint::Length(6)]).areas(inner_area);
 
             let help_text_block = Block::new().borders(Borders::ALL).title(" Help ");
             let help_text = Paragraph::new(vec![
@@ -156,7 +133,7 @@ pub fn explore_collection_in_tui(
                 let recording_names = collection
                     .recordings
                     .keys()
-                    .map(|name| format!("📄 {}", name))
+                    .map(|name| format!("📼 {}", name))
                     .collect::<Vec<_>>();
                 collection_names.into_iter().chain(recording_names)
             })
@@ -205,7 +182,9 @@ pub fn explore_collection_in_tui(
                         .context("Failed to read Manuel recordings directory")?;
                 }
                 KeyCode::Char('a') => {
-                    if let Ok(Some(new_recording)) = record_using_tui(terminal) {
+                    if let Ok(Some(new_recording)) =
+                        record_using_tui(terminal, &collection.replay_context)
+                    {
                         let new_recording_name =
                             prompt_for_text(terminal, "Name the new recording:")?
                                 .replace(" ", "_")
@@ -259,13 +238,9 @@ pub fn explore_collection_in_tui(
                             .to_lowercase();
                     std::fs::create_dir(collection_dir.join(&new_collection_name))
                         .context("Failed to create new collection directory")?;
-                    collection.collections.insert(
-                        new_collection_name,
-                        Collection {
-                            collections: HashMap::new(),
-                            recordings: HashMap::new(),
-                        },
-                    );
+                    collection
+                        .collections
+                        .insert(new_collection_name, Collection::default());
                 }
                 _ => {}
             }
