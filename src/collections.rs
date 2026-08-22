@@ -9,7 +9,8 @@ use ratatui::style::{Color, Modifier, Stylize};
 use ratatui::text::Line;
 use ratatui::widgets::{Block, Borders, List, ListState, Paragraph};
 
-use crate::recordings::{Recording, ReplayContext, record_using_tui};
+use crate::ReplayResult;
+use crate::recordings::{Recording, ReplayContext, record_using_tui, replay_recording};
 
 #[derive(Clone, Default)]
 pub struct Collection {
@@ -85,8 +86,17 @@ pub fn explore_collection_in_tui(
     collection_dir: &Path,
 ) -> Result<()> {
     let mut collection = collection.clone();
+    let mut replay_queue = Vec::<(String, Recording, ReplayContext)>::new();
+    let mut replay_results = HashMap::<String, ReplayResult>::new();
     let mut list_state = ListState::default();
     loop {
+        while let Some((name, recording, replay_context)) = replay_queue.pop() {
+            let result = replay_recording(recording.clone(), &replay_context)
+                .context("Failed to replay Manuel recording")?;
+            replay_results.insert(name, result);
+        }
+        // todo: really make this async
+
         terminal.draw(|frame| {
             let explorer_block = Block::new().borders(Borders::ALL).title(Line::from_iter([
                 " Manuel Explorer".into(),
@@ -118,7 +128,7 @@ pub fn explore_collection_in_tui(
                 Line::from(vec![
                     "[r] reload from disk".green(),
                     " · ".bold(),
-                    "[t] run tests".green(), // todo
+                    "[t] run tests".green(),
                 ]),
             ])
             .block(help_text_block);
@@ -133,7 +143,20 @@ pub fn explore_collection_in_tui(
                 let recording_names = collection
                     .recordings
                     .keys()
-                    .map(|name| format!("📼 {}", name))
+                    .map(|name| {
+                        format!(
+                            "📼 {}{}",
+                            replay_results
+                                .get(name)
+                                .map(|r| match r {
+                                    ReplayResult::Match => "✅ ",
+                                    ReplayResult::Mismatch(_) => "❌ ",
+                                    ReplayResult::RecordingError(_) => "⚠️ ",
+                                })
+                                .unwrap_or_default(),
+                            name
+                        )
+                    })
                     .collect::<Vec<_>>();
                 collection_names.into_iter().chain(recording_names)
             })
@@ -241,6 +264,15 @@ pub fn explore_collection_in_tui(
                     collection
                         .collections
                         .insert(new_collection_name, Collection::default());
+                }
+                KeyCode::Char('t') => {
+                    collection.recordings.iter().for_each(|(name, recording)| {
+                        replay_queue.push((
+                            name.clone(),
+                            recording.clone(),
+                            collection.replay_context.clone(),
+                        ));
+                    });
                 }
                 _ => {}
             }

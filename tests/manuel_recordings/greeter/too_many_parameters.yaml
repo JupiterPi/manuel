@@ -40,24 +40,25 @@ recording_items:
 - !Output e
 - !Input
   - 114
-- !Input
-  - 32
 - !Output r
 - !Input
-  - 65
+  - 32
 - !Output ' '
 - !Input
-  - 100
+  - 65
 - !Output A
 - !Input
-  - 97
+  - 100
 - !Output d
 - !Input
-  - 32
+  - 97
 - !Output a
 - !Input
+  - 32
+- !Output ' '
+- !Input
   - 76
-- !Output ' L'
+- !Output L
 - !Input
   - 111
 - !Output o
