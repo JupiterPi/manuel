@@ -1,5 +1,7 @@
 //! Manuel is a tool to create, replay and verify terminal sessions.
 //! It can be used to create tests for CLI applications the same way you would manually test them.
+//!
+//! See the [README](https://github.com/JupiterPi/manuel) for more information.
 
 pub(crate) mod collections;
 pub(crate) mod pty;
@@ -54,7 +56,7 @@ pub fn run_manuel_tests_in_dir(dir: impl AsRef<std::path::Path>) {
         {
             ReplayResult::Match => {
                 println!(
-                    "\u{1b}[32m\u{1b}[1m[OK]\u{1b}[0m Successfully replayed Manuel recording: {:?}",
+                    "\u{1b}[32m\u{1b}[1m[OK]\u{1b}[0m Successfully replayed recording: {:?}",
                     name
                 );
             }
@@ -75,6 +77,9 @@ pub fn run_manuel_tests_in_dir(dir: impl AsRef<std::path::Path>) {
         }
     }
     if fail {
+        println!(
+            "\u{1b}[31m\u{1b}[1mSome tests failed!\u{1b}[0m Use the Manuel TUI to inspect diffs. Learn more: https://github.com/JupiterPi/manuel"
+        );
         panic!("Some Manuel recordings failed to replay. See output for details.");
     }
 }
