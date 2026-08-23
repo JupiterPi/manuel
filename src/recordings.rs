@@ -44,6 +44,10 @@ impl Recording {
         }
         self.final_output_formatted = new_final_output_formatted;
     }
+
+    pub fn get_final_output_formatted(&self) -> &str {
+        &self.final_output_formatted
+    }
 }
 
 impl Recording {
@@ -201,8 +205,14 @@ pub(crate) fn replay_recording(
 ) -> Result<ReplayResult> {
     let mut pty =
         crate::pty::Pty::new_in_thread(recording.terminal_width, &replay_context.bashrc_files)?;
+
+    let mut mismatch_result = ReplayResult::Mismatch {
+        expected_output: strip_ansi_escapes::strip_str(recording.get_final_output_formatted()),
+        actual_output: String::new(),
+    };
     let mut unmatched_output = String::new();
-    let mut recording_items = recording.recording_items;
+
+    let mut recording_items = recording.recording_items.clone();
     if recording_items.is_empty() {
         return Err(anyhow::anyhow!("Recording has no items"));
     }
@@ -211,7 +221,16 @@ pub(crate) fn replay_recording(
     loop {
         // append new output
         if let Some(new_output) = pty.get_new_output() {
-            unmatched_output.push_str(&String::from_utf8_lossy(&new_output));
+            let output = String::from_utf8_lossy(&new_output);
+            if let ReplayResult::Mismatch { actual_output, .. } = &mut mismatch_result {
+                actual_output.push_str(&output);
+                let unformatted_output = strip_ansi_escapes::strip_str(&actual_output);
+                actual_output.clear();
+                actual_output.push_str(&unformatted_output);
+            } else {
+                unreachable!();
+            }
+            unmatched_output.push_str(&output);
             last_output_time = std::time::Instant::now();
         }
 
@@ -226,17 +245,11 @@ pub(crate) fn replay_recording(
                     std::cmp::Ordering::Less => {
                         // still waiting for more output, so check if it matches so far
                         if !expected_output.starts_with(&unmatched_output) {
-                            return Ok(ReplayResult::Mismatch(format!(
-                                "Replay output does not match recording. Unmatched output: {}",
-                                unmatched_output
-                            )));
+                            return Ok(mismatch_result);
                         }
                         // and check for timeout
                         if last_output_time.elapsed() > REPLAY_TIMEOUT {
-                            return Ok(ReplayResult::Mismatch(format!(
-                                "Replay timed out after {:?} with unmatched output: {}",
-                                REPLAY_TIMEOUT, unmatched_output
-                            )));
+                            return Ok(mismatch_result);
                         }
                     }
                     std::cmp::Ordering::Equal => {
@@ -258,10 +271,7 @@ pub(crate) fn replay_recording(
                     }
                     std::cmp::Ordering::Greater => {
                         // err at extra unexpected output
-                        return Ok(ReplayResult::Mismatch(format!(
-                            "Replay has more output than recording expected. Unmatched output: {}",
-                            unmatched_output
-                        )));
+                        return Ok(mismatch_result);
                     }
                 }
             }
@@ -269,10 +279,7 @@ pub(crate) fn replay_recording(
 
         // mismatch if the process exits unexpectedly
         if !pty.is_alive() {
-            return Ok(ReplayResult::Mismatch(format!(
-                "Replay has unmatched output: {}",
-                unmatched_output
-            )));
+            return Ok(mismatch_result);
         }
     }
 }

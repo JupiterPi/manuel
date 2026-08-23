@@ -14,6 +14,7 @@ use crate::recordings::{Recording, ReplayContext, record_using_tui, replay_recor
 
 #[derive(Clone, Default)]
 pub struct Collection {
+    pub name: String,
     pub collections: HashMap<String, Collection>,
     pub recordings: HashMap<String, Recording>,
     pub replay_context: ReplayContext,
@@ -22,9 +23,13 @@ pub struct Collection {
 impl Collection {
     pub fn read_from_dir<P: AsRef<std::path::Path>>(dir: P) -> Result<Collection> {
         let dir: &Path = dir.as_ref();
-        Self::read_from_dir_(dir, &ReplayContext::default())
+        Self::read_from_dir_(dir, "".to_string(), &ReplayContext::default())
     }
-    fn read_from_dir_(dir: &Path, replay_context: &ReplayContext) -> Result<Collection> {
+    fn read_from_dir_(
+        dir: &Path,
+        name: String,
+        replay_context: &ReplayContext,
+    ) -> Result<Collection> {
         let entries =
             std::fs::read_dir(dir).context("Failed to read Manuel recordings directory")?;
         let mut collections = HashMap::new();
@@ -33,18 +38,22 @@ impl Collection {
         for entry in entries {
             let entry = entry.context("Failed to read entry in Manuel recordings directory")?;
             let path = entry.path();
-            let name = path
+            let entry_name = path
                 .file_name()
                 .map(|str| str.to_string_lossy().to_string())
                 .unwrap_or("<unnamed>".to_string());
             if path.is_dir() {
-                let collection = Collection::read_from_dir_(&path, &replay_context)
-                    .context("Failed to read Manuel collection")?;
-                collections.insert(name, collection);
+                let collection = Collection::read_from_dir_(
+                    &path,
+                    format!("{}/{}", name, entry_name),
+                    &replay_context,
+                )
+                .context("Failed to read Manuel collection")?;
+                collections.insert(entry_name, collection);
             } else if path.extension().is_some_and(|ext| ext == "yaml") {
                 let recording =
                     Recording::read_from_file(&path).context("Failed to read Manuel recording")?;
-                recordings.insert(name, recording);
+                recordings.insert(entry_name, recording);
             } else if path.file_name().is_some_and(|name| name == ".bashrc") {
                 replay_context.bashrc_files.push(path);
             } else {
@@ -55,6 +64,7 @@ impl Collection {
             }
         }
         Ok(Collection {
+            name,
             collections,
             recordings,
             replay_context,
@@ -129,6 +139,8 @@ pub fn explore_collection_in_tui(
                     "[r] reload from disk".green(),
                     " · ".bold(),
                     "[t] run tests".green(),
+                    " · ".bold(),
+                    "[+] open mismatch diff".green(),
                 ]),
             ])
             .block(help_text_block);
@@ -150,7 +162,7 @@ pub fn explore_collection_in_tui(
                                 .get(name)
                                 .map(|r| match r {
                                     ReplayResult::Match => "✅ ",
-                                    ReplayResult::Mismatch(_) => "❌ ",
+                                    ReplayResult::Mismatch { .. } => "❌ ",
                                     ReplayResult::RecordingError(_) => "⚠️ ",
                                 })
                                 .unwrap_or_default(),
@@ -256,6 +268,38 @@ pub fn explore_collection_in_tui(
                             std::fs::remove_file(collection_dir.join(&selected_recording_name))
                                 .context("Failed to delete recording file")?;
                             collection.recordings.remove(&selected_recording_name);
+                            replay_results.clear();
+                        }
+                    }
+                }
+                KeyCode::Char('+') => {
+                    if let Some(selected) = list_state.selected() {
+                        if selected < collection.collections.len() {
+                            alert(
+                                terminal,
+                                "Cannot open diff for a collection. Please select a recording.",
+                            )?;
+                        } else {
+                            let selected_recording_name = collection
+                                .recordings
+                                .keys()
+                                .nth(selected - collection.collections.len())
+                                .context("Selected recording not found")?
+                                .clone();
+                            if let Some(ReplayResult::Mismatch {
+                                expected_output,
+                                actual_output,
+                            }) = replay_results.get(&selected_recording_name)
+                            {
+                                compute_and_open_mismatch_diff(
+                                    terminal,
+                                    &format!(".{}/{}", collection.name, selected_recording_name),
+                                    expected_output,
+                                    actual_output,
+                                )?;
+                            } else {
+                                alert(terminal, "No mismatch found for the selected recording.")?;
+                            }
                         }
                     }
                 }
@@ -355,4 +399,69 @@ fn centered_rect(area: Rect, max_height: u16, max_width: u16) -> Rect {
         width,
         height,
     }
+}
+
+fn compute_and_open_mismatch_diff(
+    terminal: &mut DefaultTerminal,
+    recording_name: &str,
+    expected_output: &str,
+    actual_output: &str,
+) -> Result<()> {
+    let diff = similar::TextDiff::from_lines(expected_output, actual_output);
+    let mut diff_output = String::new();
+    for change in diff.iter_all_changes() {
+        let sign = match change.tag() {
+            similar::ChangeTag::Delete => "- ",
+            similar::ChangeTag::Insert => "+ ",
+            similar::ChangeTag::Equal => "  ",
+        };
+        diff_output.push_str(&format!("{}{}", sign, change));
+    }
+
+    let diff_file_path = std::env::temp_dir().join(format!(
+        "manuel_mismatch_diff_{}.md",
+        recording_name
+            .replace("/", "__")
+            .rsplit_once(".")
+            .unwrap_or((recording_name, ""))
+            .0
+    ));
+    std::fs::write(
+        &diff_file_path,
+        format!(
+            "# Manuel mismatch diff for `{}`\n\
+            \n\
+            ⚠️ The output listings displayed here do not contain formatting, \
+            but formatting mismatches are detected!\n\
+            \n\
+            ## Diff\n\
+            ```\n{}\n```\n\
+            \n\
+            ## Expected Output\n\
+            ```\n{}\n```\n\
+            \n\
+            ## Actual Output\n\
+            ```\n{}\n```\n",
+            recording_name, diff_output, expected_output, actual_output
+        ),
+    )
+    .context("Failed to write diff to file")?;
+    open_in_vscode(terminal, &diff_file_path)?;
+
+    Ok(())
+}
+
+fn open_in_vscode(terminal: &mut DefaultTerminal, path: &Path) -> Result<()> {
+    if std::env::var("TERM_PROGRAM").unwrap_or_default() == "vscode" {
+        std::process::Command::new("code")
+            .arg(path.display().to_string())
+            .spawn()
+            .context("Failed to open recording in VSCode")?;
+    } else {
+        alert(
+            terminal,
+            "Run in VS Code integrated terminal to open files.",
+        )?;
+    }
+    Ok(())
 }

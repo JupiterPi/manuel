@@ -26,7 +26,12 @@ pub enum ReplayResult {
     /// The replayed output matches the recorded output.
     Match,
     /// The replayed output does not match the recorded output.
-    Mismatch(String),
+    /// **Keep in mind** that there might also be a mismatch in the formatting,
+    /// which is detected but not reported in the unfomratted output here.
+    Mismatch {
+        expected_output: String,
+        actual_output: String,
+    },
     /// An error occurred during the replay process.
     RecordingError(String),
 }
@@ -53,11 +58,11 @@ pub fn run_manuel_tests_in_dir(dir: impl AsRef<std::path::Path>) {
                     name
                 );
             }
-            ReplayResult::Mismatch(reason) => {
+            ReplayResult::Mismatch { .. } => {
                 fail = true;
                 println!(
-                    "\u{1b}[31m\u{1b}[1m[FAIL]\u{1b}[0m Replay did not match recording: {:?}, reason: {}",
-                    name, reason
+                    "\u{1b}[31m\u{1b}[1m[FAIL]\u{1b}[0m Replay did not match recording: {:?} (open in Manuel to see details)",
+                    name
                 );
             }
             ReplayResult::RecordingError(reason) => {
