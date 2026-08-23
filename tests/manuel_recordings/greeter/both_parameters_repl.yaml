@@ -1,12 +1,13 @@
 # Manuel recording file
 
-# (manuel) greeter
-# First name: Ada
-# Last name: Lovelace
-# Hello, Ada Lovelace!
-# (manuel) 
+# (manuel) greeter                                                                                 #
+# First name: Ada                                                                                  #
+# Last name: Lovelace                                                                              #
+# Hello, Ada Lovelace!                                                                             #
+# (manuel)                                                                                         #
+#                                                                                                  #
 
-terminal_width: 102
+terminal_width: 97
 recording_items:
 - !Output "\e[?2004h\e[1m\e[34m(manuel)\e[0m "
 - !Input
@@ -72,3 +73,4 @@ recording_items:
 - !Input
   - 13
 - !Output "\r\nHello, Ada Lovelace!\r\n\e[?2004h\e[1m\e[34m(manuel)\e[0m "
+final_output_formatted: "\e[34;1m(manuel)\e[m greeter\e[m\nFirst name: Ada\e[m\nLast name: Lovelace\e[m\nHello, Ada Lovelace!\e[m\n\e[34;1m(manuel)\e[m \e[m\n"

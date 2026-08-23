@@ -196,6 +196,11 @@ pub fn explore_collection_in_tui(
                                     .arg(collection_dir.join(selected_recording_name))
                                     .spawn()
                                     .context("Failed to open recording in VSCode")?;
+                            } else {
+                                alert(
+                                    terminal,
+                                    "Run in VS Code integrated terminal to open files.",
+                                )?;
                             }
                         }
                     }

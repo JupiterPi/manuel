@@ -25,6 +25,7 @@ fn main() -> Result<()> {
         )
         .context("Failed to initialize file logger")?;
     }
+    log::info!("Manuel v{}", env!("CARGO_PKG_VERSION"));
 
     manuel::open_manuel_explorer(
         cli_args

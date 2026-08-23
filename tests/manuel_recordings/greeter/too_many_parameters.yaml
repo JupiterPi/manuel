@@ -1,23 +1,24 @@
 # Manuel recording file
 
-# (manuel) greeter Ada Lovelace Huuhhhh
-# Greets a user by first and last name.
-# 
-# Usage: sample-cli-application.sh [FIRST_NAME] [LAST_NAME]
-# 
-# Arguments:
-#   [FIRST_NAME]  The user's first name
-#   [LAST_NAME]   The user's last name
-# 
-# Options:
-#   -h, --help     Print help
-#   -V, --version  Print version
-# error: unexpected argument 'Huuhhhh' found
-# (manuel) echo $?
-# 1
-# (manuel) 
+# (manuel) greeter Ada Lovelace Huuhhhh                                                            #
+# Greets a user by first and last name.                                                            #
+#                                                                                                  #
+# Usage: sample-cli-application.sh [FIRST_NAME] [LAST_NAME]                                        #
+#                                                                                                  #
+# Arguments:                                                                                       #
+#   [FIRST_NAME]  The user's first name                                                            #
+#   [LAST_NAME]   The user's last name                                                             #
+#                                                                                                  #
+# Options:                                                                                         #
+#   -h, --help     Print help                                                                      #
+#   -V, --version  Print version                                                                   #
+# error: unexpected argument 'Huuhhhh' found                                                       #
+# (manuel) echo $?                                                                                 #
+# 1                                                                                                #
+# (manuel)                                                                                         #
+#                                                                                                  #
 
-terminal_width: 102
+terminal_width: 97
 recording_items:
 - !Output "\e[?2004h\e[1m\e[34m(manuel)\e[0m "
 - !Input
@@ -131,3 +132,4 @@ recording_items:
 - !Input
   - 13
 - !Output "\r\n\e[?2004l\r1\r\n\e[?2004h\e[1m\e[34m(manuel)\e[0m "
+final_output_formatted: "\e[34;1m(manuel)\e[m greeter Ada Lovelace Huuhhhh\e[m\nGreets a user by first and last name.\e[m\n\e[m\nUsage: sample-cli-application.sh [FIRST_NAME] [LAST_NAME]\e[m\n\e[m\nArguments:\e[m\n  [FIRST_NAME]  The user's first name\e[m\n  [LAST_NAME]   The user's last name\e[m\n\e[m\nOptions:\e[m\n  -h, --help     Print help\e[m\n  -V, --version  Print version\e[m\nerror: unexpected argument 'Huuhhhh' found\e[m\n\e[34;1m(manuel)\e[m echo $?\e[m\n1\e[m\n\e[34;1m(manuel)\e[m \e[m\n"

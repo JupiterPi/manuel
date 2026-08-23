@@ -11,12 +11,14 @@ use ratatui::{
 use serde::{Deserialize, Serialize};
 use std::io::Write;
 use std::{path::PathBuf, time::Duration};
+use unicode_width::UnicodeWidthStr;
 
 /// Contains all information necessary to replay a terminal session that was previously recorded.
 #[derive(Serialize, Deserialize, Clone)]
 pub(crate) struct Recording {
     terminal_width: u16,
     recording_items: Vec<RecordingItem>,
+    final_output_formatted: String,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -30,15 +32,17 @@ impl Recording {
         Self {
             terminal_width,
             recording_items: Vec::new(),
+            final_output_formatted: String::new(),
         }
     }
 
-    pub(crate) fn append_output(&mut self, output: String) {
+    pub(crate) fn append_output(&mut self, output: String, new_final_output_formatted: String) {
         if let Some(RecordingItem::Output(last_output)) = self.recording_items.last_mut() {
             last_output.push_str(&output);
         } else {
             self.recording_items.push(RecordingItem::Output(output));
         }
+        self.final_output_formatted = new_final_output_formatted;
     }
 }
 
@@ -50,17 +54,6 @@ impl Recording {
         Ok(recording)
     }
 
-    pub(crate) fn concatenate_output(&self) -> String {
-        self.recording_items
-            .iter()
-            .filter_map(|item| match item {
-                RecordingItem::Output(output) => Some(output.clone()),
-                _ => None,
-            })
-            .collect::<Vec<_>>()
-            .join("")
-    }
-
     pub(crate) fn write_to_file(&self, path: impl AsRef<std::path::Path>) -> Result<()> {
         let file = std::fs::File::create(path)?;
         let mut writer = std::io::BufWriter::new(file);
@@ -69,9 +62,16 @@ impl Recording {
         writeln!(
             writer,
             "{}",
-            strip_ansi_escapes::strip_str(self.concatenate_output())
+            strip_ansi_escapes::strip_str(self.final_output_formatted.as_str())
                 .split("\n")
-                .map(|line| format!("# {}", line))
+                .map(|line| format!(
+                    "# {}{}#",
+                    line,
+                    " ".repeat(
+                        self.terminal_width as usize
+                            - line.width().min(self.terminal_width as usize)
+                    )
+                ))
                 .collect::<Vec<_>>()
                 .join("\n")
         )?;
@@ -100,7 +100,10 @@ pub(crate) fn record_using_tui(
     let mut pty = crate::pty::Pty::new_in_thread(terminal_width, &replay_context.bashrc_files)?;
     loop {
         if let Some(new_output) = pty.get_new_output() {
-            recording.append_output(new_output);
+            recording.append_output(
+                String::from_utf8_lossy(&new_output).to_string(),
+                String::from_utf8_lossy(&pty.get_total_output()).to_string(),
+            );
         }
 
         terminal.draw(|frame| {
@@ -208,7 +211,7 @@ pub(crate) fn replay_recording(
     loop {
         // append new output
         if let Some(new_output) = pty.get_new_output() {
-            unmatched_output.push_str(&new_output);
+            unmatched_output.push_str(&String::from_utf8_lossy(&new_output));
             last_output_time = std::time::Instant::now();
         }
 
