@@ -40,7 +40,8 @@ impl Pty {
                     format!(
                         "export PS1=\"\u{1b}[1m\u{1b}[34m(manuel)\u{1b}[0m \"\n\
                             export CARGO_MANIFEST_DIR={}",
-                        env!("CARGO_MANIFEST_DIR")
+                        std::env::var("CARGO_MANIFEST_DIR")
+                            .unwrap_or("none\necho (!) CARGO_MANIFEST_DIR not set".to_string())
                     )
                     .split("\n")
                     .map(|line| format!("echo '{}'", line))
