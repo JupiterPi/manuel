@@ -35,7 +35,7 @@ impl Pty {
                 "--norc",
                 "-c",
                 &format!(
-                    "cd {} && bash --noprofile --rcfile <({}; cat {})",
+                    "cd {} && bash --noprofile --rcfile <({}{})",
                     tempdir.path().display(),
                     format!(
                         "export PS1=\"\u{1b}[1m\u{1b}[34m(manuel)\u{1b}[0m \"\n\
@@ -46,11 +46,18 @@ impl Pty {
                     .map(|line| format!("echo '{}'", line))
                     .collect::<Vec<_>>()
                     .join("; "),
-                    bashrc_files
-                        .iter()
-                        .map(|p| p.display().to_string())
-                        .collect::<Vec<_>>()
-                        .join(" "),
+                    if bashrc_files.is_empty() {
+                        "".to_string()
+                    } else {
+                        format!(
+                            "; cat {}",
+                            bashrc_files
+                                .iter()
+                                .map(|p| p.display().to_string())
+                                .collect::<Vec<_>>()
+                                .join(" ")
+                        )
+                    }
                 ),
             ]);
             cmd.env("PS1", "\u{1b}[1m\u{1b}[34m(manuel)\u{1b}[0m "); // in blue, bold, with reset afterwards
