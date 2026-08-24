@@ -1,3 +1,4 @@
 /target
-tests/manuel_recordings/filen-cli
+tests/manuel_recordings/*
+!tests/manuel_recordings/greeter
 manuel.log

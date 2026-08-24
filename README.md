@@ -6,15 +6,17 @@ Do the manual testing once, and Manuel does it automatically in the future. Orig
 
 ```bash
 # the manuel CLI tool
-cargo add --git https://github.com/JupiterPi/manuel
-# and the manuel crate for your tests
 cargo install --git https://github.com/JupiterPi/manuel
+# and the manuel crate for your tests
+cargo add --dev --git https://github.com/JupiterPi/manuel
 ```
 
 ## Usage
 
 Use the `manuel` TUI to create recordings.
 You can do anything that can be done in a `bash`, and Manuel will record your keystrokes and the output of your commands.
+
+You can also add `.bashrc` files, which will be sourced at the start of recordings in the same and child directories.
 
 Then, run the replays as integration tests in your Rust project:
 
