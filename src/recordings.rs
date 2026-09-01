@@ -1,4 +1,4 @@
-use crate::ReplayResult;
+use crate::{ReplayResult, ui};
 use ansi_to_tui::IntoText as _;
 use anyhow::{Context as _, Result};
 use ratatui::{
@@ -165,6 +165,8 @@ pub(crate) fn record_using_tui(
                     "Ctrl+C to exit".green(),
                     " · ".bold(),
                     "Ctrl+S to save".green(),
+                    " · ".bold(),
+                    "Ctrl+B for batch input".green(),
                 ]))
                 .centered()
                 .block(input_block);
@@ -182,6 +184,23 @@ pub(crate) fn record_using_tui(
                     break Ok(None);
                 } else if key_event.code == crossterm::event::KeyCode::Char('s') {
                     return Ok(Some(recording));
+                } else if key_event.code == crossterm::event::KeyCode::Char('b') {
+                    let input = ui::prompt_for_text(terminal, "Enter input to send to the TTY:")?;
+                    for char in input.chars() {
+                        let mut buf = [0; 16];
+                        let terminput_event = terminput::Event::Key(terminput::KeyEvent::new(
+                            terminput::KeyCode::Char(char),
+                        ));
+                        if let Ok(written) =
+                            terminput_event.encode(&mut buf, terminput::Encoding::Xterm)
+                        {
+                            recording
+                                .recording_items
+                                .push(RecordingItem::Input(buf[..written].to_vec()));
+                            pty.send_input(buf[..written].to_vec())?;
+                        }
+                        // todo refactor with same logic below, possibly can be simplified
+                    }
                 }
             }
             let terminput_event = terminput_crossterm::to_terminput(crossterm_event)?;
