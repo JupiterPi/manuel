@@ -9,7 +9,9 @@ use ratatui::style::{Color, Modifier, Stylize};
 use ratatui::text::Line;
 use ratatui::widgets::{Block, Borders, List, ListState, Paragraph};
 
-use crate::recordings::{Recording, ReplayContext, record_using_tui, replay_recording};
+use crate::recordings::{
+    Recording, ReplayContext, record_using_tui, replay_recording, write_mismatch_diff_to_disk,
+};
 use crate::{ReplayResult, ui};
 
 #[derive(Clone, Default)]
@@ -291,12 +293,13 @@ pub fn explore_collection_in_tui(
                                 actual_output,
                             }) = replay_results.get(&selected_recording_name)
                             {
-                                compute_and_open_mismatch_diff(
-                                    terminal,
+                                let diff_file_path = write_mismatch_diff_to_disk(
+                                    &std::env::temp_dir(),
                                     &format!(".{}/{}", collection.name, selected_recording_name),
                                     expected_output,
                                     actual_output,
                                 )?;
+                                open_in_vscode(terminal, &diff_file_path)?;
                             } else {
                                 ui::alert(
                                     terminal,
@@ -330,56 +333,6 @@ pub fn explore_collection_in_tui(
             }
         }
     }
-}
-
-fn compute_and_open_mismatch_diff(
-    terminal: &mut DefaultTerminal,
-    recording_name: &str,
-    expected_output: &str,
-    actual_output: &str,
-) -> Result<()> {
-    let diff = similar::TextDiff::from_lines(expected_output, actual_output);
-    let mut diff_output = String::new();
-    for change in diff.iter_all_changes() {
-        let sign = match change.tag() {
-            similar::ChangeTag::Delete => "- ",
-            similar::ChangeTag::Insert => "+ ",
-            similar::ChangeTag::Equal => "  ",
-        };
-        diff_output.push_str(&format!("{}{}", sign, change));
-    }
-
-    let diff_file_path = std::env::temp_dir().join(format!(
-        "manuel_mismatch_diff_{}.md",
-        recording_name
-            .replace("/", "__")
-            .rsplit_once(".")
-            .unwrap_or((recording_name, ""))
-            .0
-    ));
-    std::fs::write(
-        &diff_file_path,
-        format!(
-            "# Manuel mismatch diff for `{}`\n\
-            \n\
-            ⚠️ The output listings displayed here do not contain formatting, \
-            but formatting mismatches are detected!\n\
-            \n\
-            ## Diff\n\
-            ```\n{}\n```\n\
-            \n\
-            ## Expected Output\n\
-            ```\n{}\n```\n\
-            \n\
-            ## Actual Output\n\
-            ```\n{}\n```\n",
-            recording_name, diff_output, expected_output, actual_output
-        ),
-    )
-    .context("Failed to write diff to file")?;
-    open_in_vscode(terminal, &diff_file_path)?;
-
-    Ok(())
 }
 
 fn open_in_vscode(terminal: &mut DefaultTerminal, path: &Path) -> Result<()> {

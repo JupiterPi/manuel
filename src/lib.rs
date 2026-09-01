@@ -41,6 +41,7 @@ pub enum ReplayResult {
 
 /// Replays all Manuel recordings recursively in the given directory.
 /// **Panics** if any of the recordings mismatch. Use this in your tests.
+/// Will write mismatch diffs to disk, which can be inspected after failed test runs.
 pub fn run_manuel_tests_in_dir(dir: impl AsRef<std::path::Path>) {
     assert_bash_available();
 
@@ -51,6 +52,9 @@ pub fn run_manuel_tests_in_dir(dir: impl AsRef<std::path::Path>) {
 
     // replay all recordings
     let mut fail = false;
+    let output_dir = std::env::temp_dir().join("manuel_replay_output");
+    std::fs::create_dir_all(&output_dir)
+        .expect("Failed to create output directory for Manuel replay");
     for (name, (recording, replay_context)) in recordings {
         match replay_recording(recording, &replay_context)
             .unwrap_or_else(|_| panic!("Failed to replay Manuel recording: {:?}", name))
@@ -61,11 +65,22 @@ pub fn run_manuel_tests_in_dir(dir: impl AsRef<std::path::Path>) {
                     name
                 );
             }
-            ReplayResult::Mismatch { .. } => {
+            ReplayResult::Mismatch {
+                expected_output,
+                actual_output,
+            } => {
                 fail = true;
+                let diff_file_path = recordings::write_mismatch_diff_to_disk(
+                    &output_dir,
+                    &name,
+                    &expected_output,
+                    &actual_output,
+                )
+                .expect("Failed to write mismatch diff to disk");
                 println!(
-                    "\u{1b}[31m\u{1b}[1m[FAIL]\u{1b}[0m Replay did not match recording: {:?} (open in Manuel to see details)",
-                    name
+                    "\u{1b}[31m\u{1b}[1m[FAIL]\u{1b}[0m Replay did not match recording: {:?} (diff at {})",
+                    name,
+                    diff_file_path.display()
                 );
             }
             ReplayResult::RecordingError(reason) => {
