@@ -4,13 +4,13 @@ use std::path::Path;
 use anyhow::{Context as _, Result};
 use ratatui::DefaultTerminal;
 use ratatui::crossterm::event::{self, KeyCode};
-use ratatui::layout::{Constraint, Layout, Rect};
+use ratatui::layout::{Constraint, Layout};
 use ratatui::style::{Color, Modifier, Stylize};
 use ratatui::text::Line;
 use ratatui::widgets::{Block, Borders, List, ListState, Paragraph};
 
-use crate::ReplayResult;
 use crate::recordings::{Recording, ReplayContext, record_using_tui, replay_recording};
+use crate::{ReplayResult, ui};
 
 #[derive(Clone, Default)]
 pub struct Collection {
@@ -209,7 +209,7 @@ pub fn explore_collection_in_tui(
                                     .spawn()
                                     .context("Failed to open recording in VSCode")?;
                             } else {
-                                alert(
+                                ui::alert(
                                     terminal,
                                     "Run in VS Code integrated terminal to open files.",
                                 )?;
@@ -226,7 +226,7 @@ pub fn explore_collection_in_tui(
                         record_using_tui(terminal, &collection.replay_context)
                     {
                         let new_recording_name =
-                            prompt_for_text(terminal, "Name the new recording:")?
+                            ui::prompt_for_text(terminal, "Name the new recording:")?
                                 .replace(" ", "_")
                                 .to_lowercase();
                         let new_recording_name = format!("{}.yaml", new_recording_name);
@@ -256,7 +256,7 @@ pub fn explore_collection_in_tui(
                                 let selected_collection_name = selected_collection_name.clone();
                                 collection.collections.remove(&selected_collection_name);
                             } else {
-                                alert(terminal, "Cannot delete non-empty collection.")?;
+                                ui::alert(terminal, "Cannot delete non-empty collection.")?;
                             }
                         } else {
                             let selected_recording_name = collection
@@ -275,7 +275,7 @@ pub fn explore_collection_in_tui(
                 KeyCode::Char('+') => {
                     if let Some(selected) = list_state.selected() {
                         if selected < collection.collections.len() {
-                            alert(
+                            ui::alert(
                                 terminal,
                                 "Cannot open diff for a collection. Please select a recording.",
                             )?;
@@ -298,14 +298,17 @@ pub fn explore_collection_in_tui(
                                     actual_output,
                                 )?;
                             } else {
-                                alert(terminal, "No mismatch found for the selected recording.")?;
+                                ui::alert(
+                                    terminal,
+                                    "No mismatch found for the selected recording.",
+                                )?;
                             }
                         }
                     }
                 }
                 KeyCode::Char('c') => {
                     let new_collection_name =
-                        prompt_for_text(terminal, "Name the new collection:")?
+                        ui::prompt_for_text(terminal, "Name the new collection:")?
                             .replace(" ", "_")
                             .to_lowercase();
                     std::fs::create_dir(collection_dir.join(&new_collection_name))
@@ -326,78 +329,6 @@ pub fn explore_collection_in_tui(
                 _ => {}
             }
         }
-    }
-}
-
-fn prompt_for_text(terminal: &mut DefaultTerminal, message: &str) -> Result<String> {
-    let mut input = String::new();
-    loop {
-        terminal.draw(|frame| {
-            let area = frame.area();
-            let area = centered_rect(area, 5, 80);
-            let block = Block::new()
-                .borders(Borders::ALL)
-                .title(message)
-                .title_bottom(vec![
-                    "[Enter] submit".green(),
-                    " · ".bold(),
-                    "[Esc] cancel".green(),
-                ]);
-            let inner_area = block.inner(area);
-            frame.render_widget(block, area);
-            frame.render_widget(
-                ratatui::widgets::Paragraph::new(input.as_str())
-                    .style(Color::White)
-                    .block(Block::new().borders(Borders::NONE)),
-                inner_area,
-            );
-        })?;
-
-        if let Some(key) = event::read()?.as_key_press_event() {
-            match key.code {
-                KeyCode::Char(c) => input.push(c),
-                KeyCode::Backspace => {
-                    input.pop();
-                }
-                KeyCode::Enter => return Ok(input),
-                KeyCode::Esc => return Err(anyhow::anyhow!("Input cancelled")),
-                _ => {}
-            }
-        }
-    }
-}
-
-fn alert(terminal: &mut DefaultTerminal, message: &str) -> Result<()> {
-    loop {
-        terminal.draw(|frame| {
-            let area = frame.area();
-            let area = centered_rect(area, 5, 80);
-            let block = Block::new()
-                .borders(Borders::ALL)
-                .title_bottom(vec!["[Enter]".green()]);
-            let text = Paragraph::new(message).style(Color::White).block(block);
-            frame.render_widget(text, area);
-        })?;
-
-        if let Some(key) = event::read()?.as_key_press_event() {
-            match key.code {
-                KeyCode::Enter | KeyCode::Esc => return Ok(()),
-                _ => {}
-            }
-        }
-    }
-}
-
-fn centered_rect(area: Rect, max_height: u16, max_width: u16) -> Rect {
-    let width = std::cmp::min(max_width, area.width);
-    let height = std::cmp::min(max_height, area.height);
-    let x = area.x + (area.width - width) / 2;
-    let y = area.y + (area.height - height) / 2;
-    Rect {
-        x,
-        y,
-        width,
-        height,
     }
 }
 
@@ -458,7 +389,7 @@ fn open_in_vscode(terminal: &mut DefaultTerminal, path: &Path) -> Result<()> {
             .spawn()
             .context("Failed to open recording in VSCode")?;
     } else {
-        alert(
+        ui::alert(
             terminal,
             "Run in VS Code integrated terminal to open files.",
         )?;

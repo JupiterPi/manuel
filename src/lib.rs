@@ -6,6 +6,7 @@
 pub(crate) mod collections;
 pub(crate) mod pty;
 pub(crate) mod recordings;
+pub(crate) mod ui;
 
 use crate::{
     collections::{Collection, explore_collection_in_tui},
