@@ -13,7 +13,7 @@ use crate::{
     recordings::replay_recording,
 };
 use anyhow::{Context as _, Result};
-use std::path::Path;
+use std::{collections::HashMap, path::Path};
 
 pub fn assert_bash_available() {
     if std::process::Command::new("bash")
@@ -42,7 +42,7 @@ pub enum ReplayResult {
 /// Replays all Manuel recordings recursively in the given directory.
 /// **Panics** if any of the recordings mismatch. Use this in your tests.
 /// Will write mismatch diffs to disk, which can be inspected after failed test runs.
-pub fn run_manuel_tests_in_dir(dir: impl AsRef<std::path::Path>) {
+pub fn run_manuel_tests_in_dir(dir: impl AsRef<std::path::Path>, run_consecutively: bool) {
     assert_bash_available();
 
     // discover all recordings
@@ -51,50 +51,68 @@ pub fn run_manuel_tests_in_dir(dir: impl AsRef<std::path::Path>) {
     let recordings = root_collection.flat_recordings();
 
     // replay all recordings
-    let mut fail = false;
     let output_dir = std::env::temp_dir().join("manuel_replay_output");
     std::fs::create_dir_all(&output_dir)
         .expect("Failed to create output directory for Manuel replay");
+    let mut thread_handles = HashMap::new();
+    let mut fail = false;
     for (name, (recording, replay_context)) in recordings {
-        match replay_recording(recording, &replay_context)
-            .unwrap_or_else(|_| panic!("Failed to replay Manuel recording: {:?}", name))
-        {
-            ReplayResult::Match => {
-                println!(
-                    "\u{1b}[32m\u{1b}[1m[OK]\u{1b}[0m Successfully replayed recording: {:?}",
-                    name
-                );
+        let recording_name = name.clone();
+        let output_dir = output_dir.clone();
+        let thread_handle = std::thread::spawn(move || {
+            match replay_recording(recording, &replay_context).unwrap_or_else(|_| {
+                panic!("Failed to replay Manuel recording: {:?}", recording_name)
+            }) {
+                ReplayResult::Match => {
+                    println!(
+                        "\u{1b}[32m\u{1b}[1m[OK]\u{1b}[0m Successfully replayed recording: {:?}",
+                        recording_name
+                    );
+                    true
+                }
+                ReplayResult::Mismatch {
+                    expected_output,
+                    actual_output,
+                } => {
+                    let diff_file_path = recordings::write_mismatch_diff_to_disk(
+                        &output_dir,
+                        &recording_name,
+                        &expected_output,
+                        &actual_output,
+                    )
+                    .expect("Failed to write mismatch diff to disk");
+                    println!(
+                        "\u{1b}[31m\u{1b}[1m[FAIL]\u{1b}[0m Replay did not match recording: {:?} (diff at {})",
+                        recording_name,
+                        diff_file_path.display()
+                    );
+                    false
+                }
+                ReplayResult::RecordingError(reason) => {
+                    println!(
+                        "\u{1b}[31m\u{1b}[1m[FAIL]\u{1b}[0m Error during replay: {:?}, reason: {}",
+                        recording_name, reason
+                    );
+                    false
+                }
             }
-            ReplayResult::Mismatch {
-                expected_output,
-                actual_output,
-            } => {
+        });
+        if run_consecutively {
+            if !thread_handle.join().unwrap() {
                 fail = true;
-                let diff_file_path = recordings::write_mismatch_diff_to_disk(
-                    &output_dir,
-                    &name,
-                    &expected_output,
-                    &actual_output,
-                )
-                .expect("Failed to write mismatch diff to disk");
-                println!(
-                    "\u{1b}[31m\u{1b}[1m[FAIL]\u{1b}[0m Replay did not match recording: {:?} (diff at {})",
-                    name,
-                    diff_file_path.display()
-                );
             }
-            ReplayResult::RecordingError(reason) => {
-                fail = true;
-                println!(
-                    "\u{1b}[31m\u{1b}[1m[FAIL]\u{1b}[0m Error during replay: {:?}, reason: {}",
-                    name, reason
-                );
-            }
+        } else {
+            thread_handles.insert(name.clone(), thread_handle);
+        }
+    }
+    for (_, handle) in thread_handles {
+        if !handle.join().unwrap() {
+            fail = true;
         }
     }
     if fail {
         println!(
-            "\u{1b}[31m\u{1b}[1mSome tests failed!\u{1b}[0m Use the Manuel TUI to inspect diffs. Learn more: https://github.com/JupiterPi/manuel"
+            "\u{1b}[31m\u{1b}[1mSome tests failed!\u{1b}[0m Use the Manuel TUI to edit recordings. Learn more: https://github.com/JupiterPi/manuel"
         );
         panic!("Some Manuel recordings failed to replay. See output for details.");
     }
