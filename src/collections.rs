@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::path::Path;
+use std::time::Duration;
 
 use anyhow::{Context as _, Result};
 use ratatui::DefaultTerminal;
@@ -96,6 +97,7 @@ pub fn explore_collection_in_tui(
     terminal: &mut ratatui::DefaultTerminal,
     collection: &Collection,
     collection_dir: &Path,
+    timeout: Duration,
 ) -> Result<()> {
     let mut collection = collection.clone();
     let mut replay_queue = Vec::<(String, Recording, ReplayContext)>::new();
@@ -103,7 +105,7 @@ pub fn explore_collection_in_tui(
     let mut list_state = ListState::default();
     loop {
         while let Some((name, recording, replay_context)) = replay_queue.pop() {
-            let result = replay_recording(recording.clone(), &replay_context)
+            let result = replay_recording(recording.clone(), &replay_context, timeout)
                 .context("Failed to replay Manuel recording")?;
             replay_results.insert(name, result);
         }
@@ -198,6 +200,7 @@ pub fn explore_collection_in_tui(
                                 terminal,
                                 selected_collection,
                                 &collection_dir.join(selected_collection_name),
+                                timeout,
                             )?;
                         } else {
                             let selected_recording_name = collection
@@ -288,16 +291,13 @@ pub fn explore_collection_in_tui(
                                 .nth(selected - collection.collections.len())
                                 .context("Selected recording not found")?
                                 .clone();
-                            if let Some(ReplayResult::Mismatch {
-                                expected_output,
-                                actual_output,
-                            }) = replay_results.get(&selected_recording_name)
+                            if let Some(ReplayResult::Mismatch(mismatch)) =
+                                replay_results.get(&selected_recording_name)
                             {
                                 let diff_file_path = write_mismatch_diff_to_disk(
                                     &std::env::temp_dir(),
                                     &format!(".{}/{}", collection.name, selected_recording_name),
-                                    expected_output,
-                                    actual_output,
+                                    mismatch,
                                 )?;
                                 open_in_vscode(terminal, &diff_file_path)?;
                             } else {

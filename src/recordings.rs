@@ -1,4 +1,6 @@
-use crate::{ReplayResult, ui};
+use crate::{
+    ReplayMismatch, ReplayMismatchReason, ReplayResult, terminal_output::TerminalOutput, ui,
+};
 use ansi_to_tui::IntoText as _;
 use anyhow::{Context as _, Result};
 use ratatui::{
@@ -18,7 +20,6 @@ use unicode_width::UnicodeWidthStr;
 pub(crate) struct Recording {
     terminal_width: u16,
     recording_items: Vec<RecordingItem>,
-    final_output_formatted: String,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -32,21 +33,23 @@ impl Recording {
         Self {
             terminal_width,
             recording_items: Vec::new(),
-            final_output_formatted: String::new(),
         }
     }
 
-    pub(crate) fn append_output(&mut self, output: String, new_final_output_formatted: String) {
+    pub(crate) fn append_output(&mut self, output: String) {
         if let Some(RecordingItem::Output(last_output)) = self.recording_items.last_mut() {
             last_output.push_str(&output);
         } else {
             self.recording_items.push(RecordingItem::Output(output));
         }
-        self.final_output_formatted = new_final_output_formatted;
     }
 
-    pub fn get_final_output_formatted(&self) -> &str {
-        &self.final_output_formatted
+    pub(crate) fn get_terminal_width(&self) -> u16 {
+        self.terminal_width
+    }
+
+    pub(crate) fn get_recording_items(&self) -> &Vec<RecordingItem> {
+        &self.recording_items
     }
 }
 
@@ -66,7 +69,8 @@ impl Recording {
         writeln!(
             writer,
             "{}",
-            strip_ansi_escapes::strip_str(self.final_output_formatted.as_str())
+            TerminalOutput::from_recording(self)
+                .get_emulator_output_stripped()
                 .split("\n")
                 .map(|line| format!(
                     "# {}{}#",
@@ -104,10 +108,7 @@ pub(crate) fn record_using_tui(
     let mut pty = crate::pty::Pty::new_in_thread(terminal_width, &replay_context.bashrc_files)?;
     loop {
         if let Some(new_output) = pty.get_new_output() {
-            recording.append_output(
-                String::from_utf8_lossy(&new_output).to_string(),
-                String::from_utf8_lossy(&pty.get_total_output()).to_string(),
-            );
+            recording.append_output(String::from_utf8_lossy(&new_output).to_string());
         }
 
         terminal.draw(|frame| {
@@ -125,7 +126,7 @@ pub(crate) fn record_using_tui(
             {
                 let title = Paragraph::new(Line::from(vec![
                     "Manuel".bold().green(),
-                    " - Capture Snapshot \"Name\"".green(),
+                    " - Capture Recording".green(),
                 ]))
                 .centered();
                 frame.render_widget(title, layout);
@@ -134,7 +135,11 @@ pub(crate) fn record_using_tui(
             // pty
             let layout = layout_pty;
             {
-                let pty_output = match pty.get_total_output().into_text() {
+                let pty_output = match pty
+                    .get_total_output()
+                    .get_emulator_output_formatted()
+                    .into_text()
+                {
                     Ok(text) => text,
                     Err(e) => {
                         log::error!("Error converting PTY output to text: {:?}", e);
@@ -215,19 +220,19 @@ pub(crate) fn record_using_tui(
     }
 }
 
-const REPLAY_TIMEOUT: Duration = Duration::from_secs(5); // todo: make higher, configurable, and/or auto-detectable based on recording timestamps
-
 /// Replay a previously recorded terminal session and assert that the output matches the recording.
 pub(crate) fn replay_recording(
     recording: Recording,
     replay_context: &ReplayContext,
+    timeout: Duration,
 ) -> Result<ReplayResult> {
     let mut pty =
         crate::pty::Pty::new_in_thread(recording.terminal_width, &replay_context.bashrc_files)?;
 
-    let mut mismatch_result = ReplayResult::Mismatch {
-        expected_output: strip_ansi_escapes::strip_str(recording.get_final_output_formatted()),
-        actual_output: String::new(),
+    let mut mismatch = ReplayMismatch {
+        expected_output: TerminalOutput::from_recording(&recording),
+        actual_output: TerminalOutput::new(recording.terminal_width),
+        reason: ReplayMismatchReason::OutputMismatch,
     };
     let mut unmatched_output = String::new();
 
@@ -241,14 +246,10 @@ pub(crate) fn replay_recording(
         // append new output
         if let Some(new_output) = pty.get_new_output() {
             let output = String::from_utf8_lossy(&new_output);
-            if let ReplayResult::Mismatch { actual_output, .. } = &mut mismatch_result {
-                actual_output.push_str(&output);
-                let unformatted_output = strip_ansi_escapes::strip_str(&actual_output);
-                actual_output.clear();
-                actual_output.push_str(&unformatted_output);
-            } else {
-                unreachable!();
-            }
+            mismatch = ReplayMismatch {
+                actual_output: pty.get_total_output().clone(),
+                ..mismatch
+            };
             unmatched_output.push_str(&output);
             last_output_time = std::time::Instant::now();
         }
@@ -264,11 +265,14 @@ pub(crate) fn replay_recording(
                     std::cmp::Ordering::Less => {
                         // still waiting for more output, so check if it matches so far
                         if !expected_output.starts_with(&unmatched_output) {
-                            return Ok(mismatch_result);
+                            return Ok(ReplayResult::Mismatch(mismatch));
                         }
                         // and check for timeout
-                        if last_output_time.elapsed() > REPLAY_TIMEOUT {
-                            return Ok(mismatch_result);
+                        if last_output_time.elapsed() > timeout {
+                            return Ok(ReplayResult::Mismatch(ReplayMismatch {
+                                reason: ReplayMismatchReason::Timeout,
+                                ..mismatch
+                            }));
                         }
                     }
                     std::cmp::Ordering::Equal => {
@@ -279,18 +283,20 @@ pub(crate) fn replay_recording(
                         } else {
                             current_item = recording_items.remove(0);
                         }
+                        let mut input_buffer = Vec::new();
                         while let RecordingItem::Input(input) = current_item {
-                            pty.send_input(input)?;
+                            input_buffer.extend_from_slice(&input);
                             if recording_items.is_empty() {
                                 return Ok(ReplayResult::Match);
                             } else {
                                 current_item = recording_items.remove(0);
                             }
                         }
+                        pty.send_input(input_buffer)?;
                     }
                     std::cmp::Ordering::Greater => {
                         // err at extra unexpected output
-                        return Ok(mismatch_result);
+                        return Ok(ReplayResult::Mismatch(mismatch));
                     }
                 }
             }
@@ -298,7 +304,10 @@ pub(crate) fn replay_recording(
 
         // mismatch if the process exits unexpectedly
         if !pty.is_alive() {
-            return Ok(mismatch_result);
+            return Ok(ReplayResult::Mismatch(ReplayMismatch {
+                reason: ReplayMismatchReason::UnexpectedExit,
+                ..mismatch
+            }));
         }
     }
 }
@@ -306,18 +315,20 @@ pub(crate) fn replay_recording(
 pub(crate) fn write_mismatch_diff_to_disk(
     output_dir: &Path,
     recording_name: &str,
-    expected_output: &str,
-    actual_output: &str,
+    mismatch: &ReplayMismatch,
 ) -> Result<PathBuf> {
-    let diff = similar::TextDiff::from_lines(expected_output, actual_output);
-    let mut diff_output = String::new();
-    for change in diff.iter_all_changes() {
-        let sign = match change.tag() {
-            similar::ChangeTag::Delete => "- ",
-            similar::ChangeTag::Insert => "+ ",
-            similar::ChangeTag::Equal => "  ",
-        };
-        diff_output.push_str(&format!("{}{}", sign, change));
+    fn diff(expected: &str, actual: &str) -> String {
+        let diff = similar::TextDiff::from_lines(expected, actual);
+        let mut diff_output = String::new();
+        for change in diff.iter_all_changes() {
+            let sign = match change.tag() {
+                similar::ChangeTag::Delete => "- ",
+                similar::ChangeTag::Insert => "+ ",
+                similar::ChangeTag::Equal => "  ",
+            };
+            diff_output.push_str(&format!("{}{}", sign, change));
+        }
+        diff_output
     }
 
     let diff_file_path = output_dir.join(format!(
@@ -331,20 +342,41 @@ pub(crate) fn write_mismatch_diff_to_disk(
     std::fs::write(
         &diff_file_path,
         format!(
-            "# Manuel mismatch diff for `{}`\n\
+            "# Manuel mismatch diff for `{}` ({})\n\
             \n\
-            ⚠️ The output listings displayed here do not contain formatting, \
-            but formatting mismatches are detected!\n\
+            ⚠️ The output listings displayed here first do not contain formatting!\n\
             \n\
-            ## Diff\n\
+            ## Diff (as it appears in the terminal)\n\
             ```\n{}\n```\n\
             \n\
-            ## Expected Output\n\
+            ## Diff (as it comes in)\n\
             ```\n{}\n```\n\
             \n\
-            ## Actual Output\n\
-            ```\n{}\n```\n",
-            recording_name, diff_output, expected_output, actual_output
+            ## Diff (as it appears in the terminal, with formatting)\n\
+            ```\n{}\n```\n\
+            \n\
+            ## Diff (as it comes in, with formatting)\n\
+            ```\n{}\n```\n\
+            \n\
+            ",
+            recording_name,
+            mismatch.reason.as_str(),
+            diff(
+                &mismatch.expected_output.get_emulator_output_stripped(),
+                &mismatch.actual_output.get_emulator_output_stripped()
+            ),
+            diff(
+                &mismatch.expected_output.get_output_stripped(),
+                &mismatch.actual_output.get_output_stripped()
+            ),
+            diff(
+                &mismatch.expected_output.get_emulator_output_formatted(),
+                &mismatch.actual_output.get_emulator_output_formatted()
+            ),
+            diff(
+                &mismatch.expected_output.get_output_formatted(),
+                &mismatch.actual_output.get_output_formatted()
+            )
         ),
     )
     .context("Failed to write diff to file")?;

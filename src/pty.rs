@@ -2,11 +2,13 @@ use std::{fs, path::PathBuf};
 
 use anyhow::{Context as _, Result};
 
+use crate::terminal_output::TerminalOutput;
+
 pub(crate) struct Pty {
     pty_in_tx: std::sync::mpsc::Sender<Vec<u8>>,
     pty_out_rx: std::sync::mpsc::Receiver<Vec<u8>>,
     pty_is_alive: bool,
-    vte: vt100::Parser,
+    output: TerminalOutput,
 }
 
 impl Pty {
@@ -105,11 +107,7 @@ impl Pty {
             pty_in_tx,
             pty_out_rx,
             pty_is_alive: true,
-            vte: vt100::Parser::new(
-                u16::MAX, // todo?
-                width - 1,
-                0,
-            ),
+            output: TerminalOutput::new(width),
         })
     }
 
@@ -130,41 +128,14 @@ impl Pty {
             }
         }
         if let Some(ref new_output) = new_output {
-            self.vte.process(new_output);
+            self.output.append_output(new_output);
         }
         new_output
     }
 
-    /// Get the total output from the PTY from the internal buffer. Call `get_new_output` first to update the buffer with new output.
-    pub(crate) fn get_total_output(&self) -> Vec<u8> {
-        let mut output_buffer: Vec<u8> = Vec::new();
-        let screen = self.vte.screen();
-        let (_, cols) = screen.size();
-        let last_non_blank_row_idx = {
-            let mut last_non_blank_row_idx = 0;
-            let mut number_of_consecutive_blank_rows = 0;
-            for (row_idx, row) in screen.rows_formatted(0, cols).enumerate() {
-                if !row.is_empty() {
-                    last_non_blank_row_idx = row_idx;
-                } else {
-                    number_of_consecutive_blank_rows += 1;
-                }
-                if number_of_consecutive_blank_rows > 100 {
-                    break;
-                }
-            }
-            last_non_blank_row_idx
-        };
-        for (row_idx, row) in screen.rows_formatted(0, cols).enumerate() {
-            if row_idx > last_non_blank_row_idx {
-                break;
-            }
-            output_buffer.extend(row);
-            // rows_formatted generates each row assuming it starts at default
-            // attrs, but never resets at the end, so attrs bleed between rows.
-            output_buffer.extend(b"\x1b[m\n");
-        }
-        output_buffer
+    /// Get the total output from the PTY. Call `get_new_output` first to update it with new output.
+    pub(crate) fn get_total_output(&self) -> &TerminalOutput {
+        &self.output
     }
 
     pub(crate) fn send_input(&self, input: Vec<u8>) -> Result<()> {
