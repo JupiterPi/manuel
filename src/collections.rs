@@ -142,7 +142,7 @@ pub fn explore_collection_in_tui(
                 Line::from(vec![
                     "[r] reload from disk".green(),
                     " · ".bold(),
-                    "[t] run tests".green(),
+                    "[t/T] run test / all tests".green(),
                     " · ".bold(),
                     "[+] open mismatch diff".green(),
                 ]),
@@ -321,13 +321,36 @@ pub fn explore_collection_in_tui(
                         .insert(new_collection_name, Collection::default());
                 }
                 KeyCode::Char('t') => {
-                    collection.recordings.iter().for_each(|(name, recording)| {
-                        replay_queue.push((
-                            name.clone(),
-                            recording.clone(),
-                            collection.replay_context.clone(),
-                        ));
-                    });
+                    if key.modifiers.contains(event::KeyModifiers::SHIFT) {
+                        collection.recordings.iter().for_each(|(name, recording)| {
+                            replay_queue.push((
+                                name.clone(),
+                                recording.clone(),
+                                collection.replay_context.clone(),
+                            ));
+                        });
+                    } else {
+                        if let Some(selected) = list_state.selected() {
+                            if selected < collection.collections.len() {
+                                ui::alert(
+                                    terminal,
+                                    "Cannot test a collection. Please select a recording.",
+                                )?;
+                            } else {
+                                let (_, (selected_recording_name, selected_recording)) = collection
+                                    .recordings
+                                    .iter()
+                                    .enumerate()
+                                    .nth(selected - collection.collections.len())
+                                    .context("Selected recording not found")?;
+                                replay_queue.push((
+                                    selected_recording_name.clone(),
+                                    selected_recording.clone(),
+                                    collection.replay_context.clone(),
+                                ));
+                            }
+                        }
+                    }
                 }
                 _ => {}
             }

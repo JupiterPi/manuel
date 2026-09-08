@@ -88,7 +88,7 @@ impl Pty {
                             match pty_out_tx.send(buffer[..n].to_vec()) {
                                 Ok(_) => {}
                                 Err(e) => {
-                                    log::error!("Error sending PTY output: {:?}", e);
+                                    log::warn!("Error sending PTY output: {:?}", e);
                                 }
                             }
                         } else {
