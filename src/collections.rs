@@ -35,9 +35,10 @@ impl Collection {
     ) -> Result<Collection> {
         let entries =
             std::fs::read_dir(dir).context("Failed to read Manuel recordings directory")?;
-        let mut collections = HashMap::new();
+
         let mut recordings = HashMap::new();
         let mut replay_context = replay_context.clone();
+        let mut pending_collection_dirs = Vec::new();
         for entry in entries {
             let entry = entry.context("Failed to read entry in Manuel recordings directory")?;
             let path = entry.path();
@@ -46,13 +47,7 @@ impl Collection {
                 .map(|str| str.to_string_lossy().to_string())
                 .unwrap_or("<unnamed>".to_string());
             if path.is_dir() {
-                let collection = Collection::read_from_dir_(
-                    &path,
-                    format!("{}/{}", name, entry_name),
-                    &replay_context,
-                )
-                .context("Failed to read Manuel collection")?;
-                collections.insert(entry_name, collection);
+                pending_collection_dirs.push((entry_name, path));
             } else if path.extension().is_some_and(|ext| ext == "yaml") {
                 let recording =
                     Recording::read_from_file(&path).context("Failed to read Manuel recording")?;
@@ -66,6 +61,19 @@ impl Collection {
                 );
             }
         }
+        let collections = pending_collection_dirs
+            .into_iter()
+            .map(|(name, dir)| {
+                match Collection::read_from_dir_(
+                    &dir,
+                    format!("{}/{}", name, name),
+                    &replay_context,
+                ) {
+                    Err(e) => Err(e.context("Failed to read Manuel collection")),
+                    Ok(collection) => Ok((name, collection)),
+                }
+            })
+            .collect::<Result<HashMap<_, _>>>()?;
         Ok(Collection {
             name,
             collections,
