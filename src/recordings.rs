@@ -316,7 +316,7 @@ pub(crate) fn write_mismatch_diff_to_disk(
     output_dir: &Path,
     recording_name: &str,
     mismatch: &ReplayMismatch,
-) -> Result<PathBuf> {
+) -> Result<(PathBuf, String)> {
     fn diff(expected: &str, actual: &str) -> String {
         let diff = similar::TextDiff::from_lines(expected, actual);
         let mut diff_output = String::new();
@@ -339,10 +339,8 @@ pub(crate) fn write_mismatch_diff_to_disk(
             .unwrap_or((recording_name, ""))
             .0
     ));
-    std::fs::write(
-        &diff_file_path,
-        format!(
-            "# Manuel mismatch diff for `{}` ({})\n\
+    let content = format!(
+        "# Manuel mismatch diff for `{}` ({})\n\
             \n\
             ⚠️ The output listings displayed here first do not contain formatting!\n\
             \n\
@@ -359,27 +357,26 @@ pub(crate) fn write_mismatch_diff_to_disk(
             ```\n{}\n```\n\
             \n\
             ",
-            recording_name,
-            mismatch.reason.as_str(),
-            diff(
-                &mismatch.expected_output.get_emulator_output_stripped(),
-                &mismatch.actual_output.get_emulator_output_stripped()
-            ),
-            diff(
-                &mismatch.expected_output.get_output_stripped(),
-                &mismatch.actual_output.get_output_stripped()
-            ),
-            diff(
-                &mismatch.expected_output.get_emulator_output_formatted(),
-                &mismatch.actual_output.get_emulator_output_formatted()
-            ),
-            diff(
-                &mismatch.expected_output.get_output_formatted(),
-                &mismatch.actual_output.get_output_formatted()
-            )
+        recording_name,
+        mismatch.reason.as_str(),
+        diff(
+            &mismatch.expected_output.get_emulator_output_stripped(),
+            &mismatch.actual_output.get_emulator_output_stripped()
         ),
-    )
-    .context("Failed to write diff to file")?;
+        diff(
+            &mismatch.expected_output.get_output_stripped(),
+            &mismatch.actual_output.get_output_stripped()
+        ),
+        diff(
+            &mismatch.expected_output.get_emulator_output_formatted(),
+            &mismatch.actual_output.get_emulator_output_formatted()
+        ),
+        diff(
+            &mismatch.expected_output.get_output_formatted(),
+            &mismatch.actual_output.get_output_formatted()
+        )
+    );
+    std::fs::write(&diff_file_path, content.clone()).context("Failed to write diff to file")?;
 
-    Ok(diff_file_path)
+    Ok((diff_file_path, content))
 }

@@ -302,7 +302,7 @@ pub fn explore_collection_in_tui(
                             if let Some(ReplayResult::Mismatch(mismatch)) =
                                 replay_results.get(&selected_recording_name)
                             {
-                                let diff_file_path = write_mismatch_diff_to_disk(
+                                let (diff_file_path, _) = write_mismatch_diff_to_disk(
                                     &std::env::temp_dir(),
                                     &format!(".{}/{}", collection.name, selected_recording_name),
                                     mismatch,

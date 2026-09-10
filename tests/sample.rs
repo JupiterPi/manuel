@@ -6,5 +6,6 @@ fn manuel_tests() {
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/manuel_recordings"),
         false,
         std::time::Duration::from_secs(60),
+        true,
     );
 }

@@ -70,10 +70,12 @@ impl ReplayMismatchReason {
 /// Replays all Manuel recordings recursively in the given directory.
 /// **Panics** if any of the recordings mismatch. Use this in your tests.
 /// Will write mismatch diffs to disk, which can be inspected after failed test runs.
+/// Enable `print_diffs` instead e.g. in a CI workflow.
 pub fn run_manuel_tests_in_dir(
     dir: impl AsRef<std::path::Path>,
     run_consecutively: bool,
     timeout: Duration,
+    print_diffs: bool,
 ) {
     assert_bash_available();
 
@@ -119,7 +121,7 @@ pub fn run_manuel_tests_in_dir(
                     true
                 }
                 ReplayResult::Mismatch(mismatch) => {
-                    let diff_file_path = recordings::write_mismatch_diff_to_disk(
+                    let (diff_file_path, diff_content) = recordings::write_mismatch_diff_to_disk(
                         &output_dir,
                         &recording_name,
                         &mismatch,
@@ -131,6 +133,12 @@ pub fn run_manuel_tests_in_dir(
                         recording_name,
                         diff_file_path.display()
                     );
+                    if print_diffs {
+                        println!(
+                            "\u{1b}[33m\u{1b}[1m[INFO]\u{1b}[0m ==================== Diff for {:?} ==================== \n{}\n\n",
+                            recording_name, diff_content
+                        );
+                    }
                     false
                 }
                 ReplayResult::RecordingError(reason) => {
