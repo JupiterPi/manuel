@@ -67,6 +67,8 @@ impl Pty {
                 ),
             ]);
             cmd.env("PS1", "\u{1b}[1m\u{1b}[34m(manuel)\u{1b}[0m "); // in blue, bold, with reset afterwards
+            cmd.env("TERM", "xterm-256color"); // make sure ansi control sequences are the same in every environment including CI
+            cmd.env("COLORTERM", "truecolor"); // make sure ansi control sequences are the same in every environment including CI
             cmd.cwd(tempdir.path()); // todo
             let _child = pty.slave.spawn_command(cmd).unwrap();
             let mut pty_reader = pty.master.try_clone_reader().unwrap();
